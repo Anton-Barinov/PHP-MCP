@@ -8,6 +8,7 @@ $files = [
     __DIR__ . '/StdioTransportTest.php',
     __DIR__ . '/PdoAdapterTest.php',
     __DIR__ . '/HttpTransportTest.php',
+    __DIR__ . '/SseTransportTest.php',
 ];
 
 $failed = 0;

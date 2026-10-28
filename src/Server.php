@@ -7,6 +7,8 @@ namespace PhpMcp;
 use PDO;
 use ReflectionClass;
 use ReflectionMethod;
+use ReflectionParameter;
+use ReflectionNamedType;
 use PhpMcp\Adapters\PdoAdapter;
 use PhpMcp\Attributes\McpTool;
 use PhpMcp\Attributes\McpResource;
@@ -29,6 +31,8 @@ class Server
     private array $tools = [];
     /** @var array<string, Resource> */
     private array $resources = [];
+    /** @var array<string, ResourceTemplate> */
+    private array $resourceTemplates = [];
     /** @var array<string, Prompt> */
     private array $prompts = [];
 
@@ -76,6 +80,20 @@ class Server
     public function getResources(): array
     {
         return $this->resources;
+    }
+
+    /**
+     * @return array<string, ResourceTemplate>
+     */
+    public function getResourceTemplates(): array
+    {
+        return $this->resourceTemplates;
+    }
+
+    public function addResourceTemplate(ResourceTemplate $template): self
+    {
+        $this->resourceTemplates[$template->getUriTemplate()] = $template;
+        return $this;
     }
 
     /**
@@ -149,24 +167,25 @@ class Server
         $obj = is_string($instance) ? $ref->newInstance() : $instance;
 
         foreach ($ref->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            $docData = $this->parseDocComment($method->getDocComment() ?: null);
+
             // Check #[McpTool]
             $toolAttrs = $method->getAttributes(McpTool::class);
             if (!empty($toolAttrs)) {
                 /** @var McpTool $attr */
                 $attr = $toolAttrs[0]->newInstance();
                 $toolName = $attr->name ?: $method->getName();
+                $toolDesc = $attr->description ?: ($docData['summary'] ?: "Executes {$method->getName()}");
 
-                $tool = Tool::create($toolName)
-                    ->description($attr->description ?: "Executes {$method->getName()}");
+                $tool = Tool::create($toolName)->description($toolDesc);
 
                 foreach ($method->getParameters() as $param) {
-                    $type = $param->getType() ? (string)$param->getType() : 'string';
-                    $tool->param(
-                        $param->getName(),
-                        $type === 'int' ? 'number' : ($type === 'bool' ? 'boolean' : 'string'),
-                        "Parameter \${$param->getName()}",
-                        !$param->isOptional()
-                    );
+                    $pName = $param->getName();
+                    $pType = $this->resolveParamType($param);
+                    $pDesc = $docData['params'][$pName] ?? "Parameter \${$pName}";
+                    $isRequired = !$param->isOptional() && !$param->allowsNull() && !$param->isDefaultValueAvailable();
+
+                    $tool->param($pName, $pType, $pDesc, $isRequired);
                 }
 
                 $tool->handler(function (array $args) use ($obj, $method) {
@@ -192,8 +211,9 @@ class Server
             if (!empty($resAttrs)) {
                 /** @var McpResource $attr */
                 $attr = $resAttrs[0]->newInstance();
+                $resDesc = $attr->description ?: ($docData['summary'] ?: "Resource {$method->getName()}");
                 $res = Resource::create($attr->uri, $attr->name ?: $method->getName())
-                    ->description($attr->description)
+                    ->description($resDesc)
                     ->mimeType($attr->mimeType)
                     ->reader(fn($uri) => $method->invoke($obj, $uri));
                 $this->addResource($res);
@@ -204,8 +224,9 @@ class Server
             if (!empty($promptAttrs)) {
                 /** @var McpPrompt $attr */
                 $attr = $promptAttrs[0]->newInstance();
+                $promptDesc = $attr->description ?: ($docData['summary'] ?: "Prompt {$method->getName()}");
                 $prompt = Prompt::create($attr->name ?: $method->getName())
-                    ->description($attr->description)
+                    ->description($promptDesc)
                     ->generator(fn($args) => $method->invoke($obj, $args));
                 $this->addPrompt($prompt);
             }
@@ -214,11 +235,55 @@ class Server
         return $this;
     }
 
+    private function resolveParamType(ReflectionParameter $param): string
+    {
+        $type = $param->getType();
+        if ($type instanceof ReflectionNamedType) {
+            $name = strtolower($type->getName());
+            return match ($name) {
+                'int', 'integer' => 'integer',
+                'float', 'double' => 'number',
+                'bool', 'boolean' => 'boolean',
+                'array' => 'array',
+                default => 'string',
+            };
+        }
+        return 'string';
+    }
+
+    private function parseDocComment(?string $doc): array
+    {
+        $result = ['summary' => '', 'params' => []];
+        if (!$doc) {
+            return $result;
+        }
+
+        $lines = explode("\n", $doc);
+        $summaryLines = [];
+        foreach ($lines as $line) {
+            $trimmed = trim($line, "/* \t\r");
+            if (str_starts_with($trimmed, '@param')) {
+                if (preg_match('/@param\s+(?:[^\$]+)?\$([a-zA-Z0-9_]+)\s*(.*)/', $trimmed, $m)) {
+                    $result['params'][$m[1]] = trim($m[2]);
+                }
+            } elseif (!str_starts_with($trimmed, '@') && $trimmed !== '') {
+                $summaryLines[] = $trimmed;
+            }
+        }
+        $result['summary'] = implode(' ', $summaryLines);
+        return $result;
+    }
+
     /**
      * Dispatch incoming JSON-RPC 2.0 requests
      */
     public function handle(JsonRpcRequest $request): ?JsonRpcResponse
     {
+        // JSON-RPC 2.0: Notifications (no id) MUST NOT receive any response
+        if ($request->isNotification() && !in_array($request->method, ['initialize', 'ping'], true)) {
+            return null;
+        }
+
         try {
             switch ($request->method) {
                 case 'initialize':
@@ -226,6 +291,8 @@ class Server
 
                 case 'notifications/initialized':
                 case 'initialized':
+                case 'notifications/cancelled':
+                case 'notifications/progress':
                     return null; // Notification acknowledged, no response needed
 
                 case 'ping':
@@ -242,6 +309,13 @@ class Server
 
                 case 'resources/read':
                     return $this->handleResourcesRead($request);
+
+                case 'resources/templates/list':
+                    return $this->handleResourceTemplatesList($request);
+
+                case 'resources/subscribe':
+                case 'resources/unsubscribe':
+                    return JsonRpcResponse::success($request->id, new \stdClass());
 
                 case 'prompts/list':
                     return $this->handlePromptsList($request);
@@ -357,6 +431,18 @@ class Server
 
         $res = $this->resources[$uri];
         return JsonRpcResponse::success($request->id, $res->read());
+    }
+
+    private function handleResourceTemplatesList(JsonRpcRequest $request): JsonRpcResponse
+    {
+        $templates = [];
+        foreach ($this->resourceTemplates as $t) {
+            $templates[] = $t->toMcpDefinition();
+        }
+
+        return JsonRpcResponse::success($request->id, [
+            'resourceTemplates' => $templates,
+        ]);
     }
 
     private function handlePromptsList(JsonRpcRequest $request): JsonRpcResponse

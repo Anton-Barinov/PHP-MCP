@@ -110,6 +110,21 @@ class Tool
             throw new InvalidArgumentException("Tool '{$this->name}' has no execution handler defined.");
         }
 
+        // Validate required parameters according to inputSchema
+        foreach ($this->required as $reqField) {
+            if (!array_key_exists($reqField, $arguments)) {
+                return [
+                    'content' => [
+                        [
+                            'type' => 'text',
+                            'text' => "Validation Error: Missing required parameter '{$reqField}' for tool '{$this->name}'.",
+                        ],
+                    ],
+                    'isError' => true,
+                ];
+            }
+        }
+
         try {
             $result = call_user_func($this->handler, $arguments);
             $isError = false;

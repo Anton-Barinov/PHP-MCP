@@ -202,14 +202,21 @@ $server->listen($transport);
 Debug and test your MCP servers from the terminal without having to launch Claude or Cursor:
 
 ```bash
-# 1. Inspect server capabilities (tools, resources, prompts)
+# 1. Inspect server capabilities (tools, resources, templates, prompts)
 php bin/php-mcp inspect examples/01_quickstart_5_lines.php
 
-# 2. Test tool execution directly
+# 2. Test / call tool execution directly from terminal
 php bin/php-mcp test examples/01_quickstart_5_lines.php get_product_stock '{"sku":"PRO-100"}'
+php bin/php-mcp call examples/01_quickstart_5_lines.php get_product_stock '{"sku":"PRO-100"}'
 
-# 3. Read an exposed resource
+# 3. Read an exposed resource directly
 php bin/php-mcp resource examples/03_database_mcp.php db://schema
+
+# 4. Generate and view a prompt template
+php bin/php-mcp prompt examples/02_claude_desktop_server.php greeting '{"name":"Anton"}'
+
+# 5. Serve over stdio for CLI pipelines and integration tests
+php bin/php-mcp serve examples/01_quickstart_5_lines.php
 ```
 
 Output:

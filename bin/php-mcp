@@ -11,6 +11,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../src/Server.php';
 require_once __DIR__ . '/../src/Tool.php';
 require_once __DIR__ . '/../src/Resource.php';
+require_once __DIR__ . '/../src/ResourceTemplate.php';
 require_once __DIR__ . '/../src/Prompt.php';
 require_once __DIR__ . '/../src/Protocol/ProtocolVersion.php';
 require_once __DIR__ . '/../src/Protocol/JsonRpcRequest.php';
@@ -23,7 +24,7 @@ require_once __DIR__ . '/../src/Adapters/PdoAdapter.php';
 use PhpMcp\Server;
 use PhpMcp\Protocol\JsonRpcRequest;
 
-$version = '1.0.0';
+$version = '1.1.0';
 
 $args = array_slice($argv, 1);
 $command = $args[0] ?? 'help';
@@ -90,6 +91,7 @@ switch ($command) {
         exit(0);
 
     case 'test':
+    case 'call':
         $file = $args[1] ?? null;
         $toolName = $args[2] ?? null;
         $toolArgs = isset($args[3]) ? json_decode($args[3], true) : [];
@@ -117,6 +119,75 @@ switch ($command) {
         echo json_encode($callRes->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
         exit(0);
 
+    case 'resource':
+        $file = $args[1] ?? null;
+        $uri = $args[2] ?? null;
+
+        if (!$file || !$uri) {
+            fwrite(STDERR, "Usage: php-mcp resource <server_script.php> <uri>\n");
+            exit(1);
+        }
+
+        ob_start();
+        $server = require $file;
+        ob_end_clean();
+
+        if (!($server instanceof Server)) {
+            fwrite(STDERR, "Error: Script must return an instance of \\PhpMcp\\Server\n");
+            exit(1);
+        }
+
+        $resReq = new JsonRpcRequest('resources/read', 1, ['uri' => $uri]);
+        $resRes = $server->handle($resReq);
+        echo json_encode($resRes->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+        exit(0);
+
+    case 'prompt':
+        $file = $args[1] ?? null;
+        $promptName = $args[2] ?? null;
+        $promptArgs = isset($args[3]) ? json_decode($args[3], true) : [];
+
+        if (!$file || !$promptName) {
+            fwrite(STDERR, "Usage: php-mcp prompt <server_script.php> <prompt_name> [json_arguments]\n");
+            exit(1);
+        }
+
+        ob_start();
+        $server = require $file;
+        ob_end_clean();
+
+        if (!($server instanceof Server)) {
+            fwrite(STDERR, "Error: Script must return an instance of \\PhpMcp\\Server\n");
+            exit(1);
+        }
+
+        $pReq = new JsonRpcRequest('prompts/get', 1, [
+            'name'      => $promptName,
+            'arguments' => is_array($promptArgs) ? $promptArgs : [],
+        ]);
+        $pRes = $server->handle($pReq);
+        echo json_encode($pRes->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+        exit(0);
+
+    case 'serve':
+        $file = $args[1] ?? null;
+        if (!$file || !file_exists($file)) {
+            fwrite(STDERR, "Usage: php-mcp serve <server_script.php>\n");
+            exit(1);
+        }
+
+        ob_start();
+        $server = require $file;
+        ob_end_clean();
+
+        if (!($server instanceof Server)) {
+            fwrite(STDERR, "Error: Script must return an instance of \\PhpMcp\\Server\n");
+            exit(1);
+        }
+
+        $server->listen();
+        exit(0);
+
     case 'help':
     default:
         echo <<<HELP
@@ -127,10 +198,13 @@ Usage:
   php-mcp <command> [arguments]
 
 Commands:
-  inspect <script.php>                 List all tools, resources, and schemas from an MCP server
-  test <script.php> <tool> [json_args] Test tool execution directly from the terminal
-  version                              Show version information
-  help                                 Show this help screen
+  inspect <script.php>                  List all tools, resources, and schemas from an MCP server
+  test <script.php> <tool> [json_args]  Test tool execution directly from the terminal
+  resource <script.php> <uri>           Read an exposed resource directly
+  prompt <script.php> <name> [json_args]Generate and view a prompt template
+  serve <script.php>                    Start server over stdio for CLI / Desktop piping
+  version                               Show version information
+  help                                  Show this help screen
 
 Examples:
   # Inspect registered capabilities:
@@ -138,6 +212,9 @@ Examples:
 
   # Test tool execution:
   php-mcp test examples/01_quickstart_5_lines.php get_product_stock '{"sku":"MAC-M3"}'
+
+  # Read a resource:
+  php-mcp resource examples/03_database_mcp.php db://schema
 
 HELP;
         exit(0);

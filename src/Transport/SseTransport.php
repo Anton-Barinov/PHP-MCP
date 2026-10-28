@@ -56,10 +56,14 @@ class SseTransport implements TransportInterface
         http_response_code(405);
     }
 
+    public function formatMessage(JsonRpcResponse $response): string
+    {
+        return "event: message\ndata: " . $response->toJson() . "\n\n";
+    }
+
     public function send(JsonRpcResponse $response): void
     {
-        echo "event: message\n";
-        echo "data: " . $response->toJson() . "\n\n";
+        echo $this->formatMessage($response);
         if (ob_get_level() > 0) {
             ob_flush();
         }

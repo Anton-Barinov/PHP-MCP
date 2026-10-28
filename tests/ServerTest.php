@@ -5,16 +5,7 @@ declare(strict_types=1);
 error_reporting(E_ALL);
 ini_set('display_errors', '1');
 
-require_once __DIR__ . '/../src/Server.php';
-require_once __DIR__ . '/../src/Tool.php';
-require_once __DIR__ . '/../src/Resource.php';
-require_once __DIR__ . '/../src/Prompt.php';
-require_once __DIR__ . '/../src/Protocol/ProtocolVersion.php';
-require_once __DIR__ . '/../src/Protocol/JsonRpcRequest.php';
-require_once __DIR__ . '/../src/Protocol/JsonRpcResponse.php';
-require_once __DIR__ . '/../src/Attributes/McpTool.php';
-require_once __DIR__ . '/../src/Attributes/McpResource.php';
-require_once __DIR__ . '/../src/Attributes/McpPrompt.php';
+require_once __DIR__ . '/../src/autoload.php';
 
 use PhpMcp\Server;
 use PhpMcp\Tool;
@@ -116,9 +107,26 @@ assertTrue(strpos($promptGetRes->result['messages'][0]['content']['text'], 'Hell
 
 // Test 8: Attributes Class Discovery
 class SampleController {
-    #[McpTool(name: 'multiply', description: 'Multiply two numbers')]
+    /**
+     * Multiply two numbers
+     *
+     * @param int $x The first factor
+     * @param int $y The second factor
+     */
+    #[McpTool(name: 'multiply')]
     public function mul(int $x, int $y): int {
         return $x * $y;
+    }
+
+    /**
+     * User profile query with optional title
+     *
+     * @param string $name User full name
+     * @param string|null $title Optional title
+     */
+    #[McpTool]
+    public function getProfile(string $name, ?string $title = 'Member'): array {
+        return ['name' => $name, 'title' => $title];
     }
 }
 
@@ -129,6 +137,51 @@ $mulReq = new JsonRpcRequest('tools/call', 'req_10', [
 ]);
 $mulRes = $server->handle($mulReq);
 assertTrue(strpos($mulRes->result['content'][0]['text'], '42') !== false, 'Attribute-based tool executed correctly (6*7=42)');
+
+// Test 8b: Attributes DocBlock parameter description and type reflection
+$toolsMap = $server->getTools();
+$profTool = $toolsMap['getProfile']->toMcpDefinition();
+$profProps = (array)$profTool['inputSchema']['properties'];
+assertTrue($profProps['name']['type'] === 'string', 'getProfile name type is string');
+assertTrue($profProps['title']['type'] === 'string', 'getProfile title type is string');
+assertTrue(in_array('name', $profTool['inputSchema']['required'] ?? []), 'getProfile name is required');
+assertTrue(!in_array('title', $profTool['inputSchema']['required'] ?? []), 'getProfile optional nullable title is not required');
+assertTrue(strpos($profProps['name']['description'], 'User full name') !== false, 'Docblock @param description was parsed for name');
+
+// Test 9: ResourceTemplate registration & resources/templates/list
+$server->addResourceTemplate(\PhpMcp\ResourceTemplate::create('db://{table}/schema', 'Table Schema Template')->description('Schema template'));
+$tmplRes = $server->handle(new JsonRpcRequest('resources/templates/list', 'req_11'));
+assertTrue(count($tmplRes->result['resourceTemplates']) === 1, 'resources/templates/list returns 1 template');
+assertTrue($tmplRes->result['resourceTemplates'][0]['uriTemplate'] === 'db://{table}/schema', 'Template URI template matches');
+
+// Test 10: Resource subscription handling
+$subRes = $server->handle(new JsonRpcRequest('resources/subscribe', 'req_12', ['uri' => 'db://schema']));
+assertTrue($subRes !== null && $subRes->result !== null, 'resources/subscribe acknowledged successfully');
+$unsubRes = $server->handle(new JsonRpcRequest('resources/unsubscribe', 'req_13', ['uri' => 'db://schema']));
+assertTrue($unsubRes !== null && $unsubRes->result !== null, 'resources/unsubscribe acknowledged successfully');
+
+// Test 11: Notification handling (returns null, no response sent)
+$notifRes = $server->handle(new JsonRpcRequest('notifications/progress', null, ['progress' => 50]));
+assertTrue($notifRes === null, 'JSON-RPC notifications return null (suppressed from wire)');
+
+// Test 12: Tool required parameter validation
+$missingReq = new JsonRpcRequest('tools/call', 'req_14', [
+    'name' => 'echo_tool',
+    'arguments' => [] // missing 'message'
+]);
+$missingRes = $server->handle($missingReq);
+assertTrue($missingRes->result['isError'] === true, 'Missing required argument returns isError: true');
+assertTrue(strpos($missingRes->result['content'][0]['text'], 'Validation Error') !== false, 'Validation error message returned');
+
+// Test 13: Stress Benchmark (1,000 tool executions)
+$benchStart = microtime(true);
+$benchIterations = 1000;
+for ($i = 0; $i < $benchIterations; $i++) {
+    $server->handle(new JsonRpcRequest('tools/call', $i, ['name' => 'multiply', 'arguments' => ['x' => $i, 'y' => 2]]));
+}
+$benchElapsed = microtime(true) - $benchStart;
+$avgLatencyMs = ($benchElapsed / $benchIterations) * 1000;
+assertTrue($avgLatencyMs < 1.0, "1,000 tool calls average latency under 1.0ms (actual: " . round($avgLatencyMs, 4) . "ms)");
 
 echo "\n---------------------------------------------------------\n";
 echo "Results: {$passed} Passed, {$failed} Failed\n";
