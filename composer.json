@@ -1,0 +1,59 @@
+{
+  "name": "anton-barinov/php-mcp",
+  "description": "Zero-dependency, high-performance PHP framework for building Anthropic Model Context Protocol (MCP) servers (Stdio, SSE, HTTP).",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-desktop",
+    "cursor",
+    "ai",
+    "llm",
+    "agents",
+    "json-rpc",
+    "stdio",
+    "sse",
+    "pdo",
+    "laravel"
+  ],
+  "authors": [
+    {
+      "name": "Anton Barinov",
+      "email": "55404783+Anton-Barinov@users.noreply.github.com",
+      "homepage": "https://github.com/Anton-Barinov"
+    }
+  ],
+  "homepage": "https://github.com/Anton-Barinov/PHP-MCP",
+  "support": {
+    "issues": "https://github.com/Anton-Barinov/PHP-MCP/issues",
+    "source": "https://github.com/Anton-Barinov/PHP-MCP"
+  },
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "PhpMcp\\": "src/"
+    },
+    "files": [
+      "src/autoload.php"
+    ]
+  },
+  "bin": [
+    "bin/php-mcp"
+  ],
+  "extra": {
+    "laravel": {
+      "providers": [
+        "PhpMcp\\Laravel\\McpServiceProvider"
+      ],
+      "aliases": {
+        "Mcp": "PhpMcp\\Laravel\\Facades\\Mcp"
+      }
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

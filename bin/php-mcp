@@ -1,0 +1,144 @@
+#!/usr/bin/env php
+<?php
+/**
+ * PHP-MCP CLI Tool — Inspection, Testing & Development Server
+ * Part of PHP-MCP by Anton Barinov
+ * https://github.com/Anton-Barinov/PHP-MCP
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../src/Server.php';
+require_once __DIR__ . '/../src/Tool.php';
+require_once __DIR__ . '/../src/Resource.php';
+require_once __DIR__ . '/../src/Prompt.php';
+require_once __DIR__ . '/../src/Protocol/ProtocolVersion.php';
+require_once __DIR__ . '/../src/Protocol/JsonRpcRequest.php';
+require_once __DIR__ . '/../src/Protocol/JsonRpcResponse.php';
+require_once __DIR__ . '/../src/Transport/TransportInterface.php';
+require_once __DIR__ . '/../src/Transport/StdioTransport.php';
+require_once __DIR__ . '/../src/Transport/HttpTransport.php';
+require_once __DIR__ . '/../src/Adapters/PdoAdapter.php';
+
+use PhpMcp\Server;
+use PhpMcp\Protocol\JsonRpcRequest;
+
+$version = '1.0.0';
+
+$args = array_slice($argv, 1);
+$command = $args[0] ?? 'help';
+
+switch ($command) {
+    case 'version':
+    case '-v':
+    case '--version':
+        echo "PHP-MCP SDK v{$version} by Anton Barinov\n";
+        exit(0);
+
+    case 'inspect':
+        $file = $args[1] ?? null;
+        if (!$file || !file_exists($file)) {
+            fwrite(STDERR, "Usage: php-mcp inspect <server_script.php>\n");
+            exit(1);
+        }
+
+        ob_start();
+        $server = require $file;
+        ob_end_clean();
+
+        if (!($server instanceof Server)) {
+            fwrite(STDERR, "Error: Script must return an instance of \\PhpMcp\\Server\n");
+            exit(1);
+        }
+
+        echo "\n=== MCP Server Capabilities ===\n\n";
+
+        // Initialize
+        $initReq = new JsonRpcRequest('initialize', 1, ['protocolVersion' => '2024-11-05']);
+        $initRes = $server->handle($initReq);
+        echo "Server:  " . $initRes->result['serverInfo']['name'] . " (v" . $initRes->result['serverInfo']['version'] . ")\n";
+        echo "Protocol: " . $initRes->result['protocolVersion'] . "\n\n";
+
+        // Tools
+        $toolsReq = new JsonRpcRequest('tools/list', 2);
+        $toolsRes = $server->handle($toolsReq);
+        $tools = $toolsRes->result['tools'] ?? [];
+        echo "Available Tools (" . count($tools) . "):\n";
+        foreach ($tools as $t) {
+            echo "  ▶ " . $t['name'] . "\n";
+            echo "    Description: " . ($t['description'] ?: 'None') . "\n";
+            $props = (array)($t['inputSchema']['properties'] ?? []);
+            if (!empty($props)) {
+                echo "    Parameters:\n";
+                foreach ($props as $pName => $pDef) {
+                    $pDef = (array)$pDef;
+                    echo "      - \${$pName} (" . ($pDef['type'] ?? 'any') . "): " . ($pDef['description'] ?? '') . "\n";
+                }
+            }
+            echo "\n";
+        }
+
+        // Resources
+        $resReq = new JsonRpcRequest('resources/list', 3);
+        $resRes = $server->handle($resReq);
+        $resources = $resRes->result['resources'] ?? [];
+        echo "Available Resources (" . count($resources) . "):\n";
+        foreach ($resources as $r) {
+            echo "  ▶ " . $r['name'] . " (" . $r['uri'] . ") [" . $r['mimeType'] . "]\n";
+        }
+        echo "\n";
+        exit(0);
+
+    case 'test':
+        $file = $args[1] ?? null;
+        $toolName = $args[2] ?? null;
+        $toolArgs = isset($args[3]) ? json_decode($args[3], true) : [];
+
+        if (!$file || !$toolName) {
+            fwrite(STDERR, "Usage: php-mcp test <server_script.php> <tool_name> [json_arguments]\n");
+            exit(1);
+        }
+
+        ob_start();
+        $server = require $file;
+        ob_end_clean();
+
+        if (!($server instanceof Server)) {
+            fwrite(STDERR, "Error: Script must return an instance of \\PhpMcp\\Server\n");
+            exit(1);
+        }
+
+        $callReq = new JsonRpcRequest('tools/call', 1, [
+            'name'      => $toolName,
+            'arguments' => is_array($toolArgs) ? $toolArgs : [],
+        ]);
+
+        $callRes = $server->handle($callReq);
+        echo json_encode($callRes->toArray(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n";
+        exit(0);
+
+    case 'help':
+    default:
+        echo <<<HELP
+PHP-MCP Framework CLI v{$version}
+Maintained by Anton Barinov <https://github.com/Anton-Barinov/PHP-MCP>
+
+Usage:
+  php-mcp <command> [arguments]
+
+Commands:
+  inspect <script.php>                 List all tools, resources, and schemas from an MCP server
+  test <script.php> <tool> [json_args] Test tool execution directly from the terminal
+  version                              Show version information
+  help                                 Show this help screen
+
+Examples:
+  # Inspect registered capabilities:
+  php-mcp inspect examples/01_quickstart_5_lines.php
+
+  # Test tool execution:
+  php-mcp test examples/01_quickstart_5_lines.php get_product_stock '{"sku":"MAC-M3"}'
+
+HELP;
+        exit(0);
+}
