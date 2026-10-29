@@ -125,10 +125,18 @@ class Tool
             }
         }
 
+        // Protect STDOUT against stray echo / var_dump / notices from user tool handlers
+        ob_start();
+        $strayOutput = '';
         try {
             $result = call_user_func($this->handler, $arguments);
+            $strayOutput = (string)ob_get_clean();
             $isError = false;
         } catch (Throwable $e) {
+            $strayOutput = (string)ob_get_clean();
+            if (!empty($strayOutput) && defined('STDERR')) {
+                @fwrite(STDERR, "[PHP-MCP Tool Output] " . $strayOutput . "\n");
+            }
             return [
                 'content' => [
                     [
@@ -138,6 +146,10 @@ class Tool
                 ],
                 'isError' => true,
             ];
+        }
+
+        if (!empty($strayOutput) && defined('STDERR')) {
+            @fwrite(STDERR, "[PHP-MCP Tool Output] " . $strayOutput . "\n");
         }
 
         // Standard MCP tool execution result format: { content: [{ type: "text", text: "..." }] }

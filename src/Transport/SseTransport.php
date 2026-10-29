@@ -56,6 +56,20 @@ class SseTransport implements TransportInterface
         http_response_code(405);
     }
 
+    public function formatKeepAlive(): string
+    {
+        return ": keep-alive\n\n";
+    }
+
+    public function sendKeepAlive(): void
+    {
+        echo $this->formatKeepAlive();
+        if (ob_get_level() > 0) {
+            ob_flush();
+        }
+        flush();
+    }
+
     public function formatMessage(JsonRpcResponse $response): string
     {
         return "event: message\ndata: " . $response->toJson() . "\n\n";

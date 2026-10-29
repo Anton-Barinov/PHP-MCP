@@ -146,26 +146,38 @@ class PdoAdapter
                         }
                     }
 
-                    $params = isset($args['params']) && is_array($args['params']) ? $args['params'] : [];
-                    $stmt = $this->pdo->prepare($sql);
-                    $stmt->execute($params);
+                    try {
+                        $params = isset($args['params']) && is_array($args['params']) ? $args['params'] : [];
+                        $stmt = $this->pdo->prepare($sql);
+                        $stmt->execute($params);
 
-                    $rows = [];
-                    $count = 0;
-                    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                        $rows[] = $row;
-                        $count++;
-                        if ($count >= $this->maxRows) {
-                            break;
+                        $rows = [];
+                        $count = 0;
+                        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                            $rows[] = $row;
+                            $count++;
+                            if ($count >= $this->maxRows) {
+                                break;
+                            }
                         }
-                    }
 
-                    return [
-                        'rows'       => $rows,
-                        'count'      => count($rows),
-                        'rowCount'   => count($rows),
-                        'truncated'  => $count >= $this->maxRows,
-                    ];
+                        return [
+                            'rows'       => $rows,
+                            'count'      => count($rows),
+                            'rowCount'   => count($rows),
+                            'truncated'  => $count >= $this->maxRows,
+                        ];
+                    } catch (\PDOException $pe) {
+                        return [
+                            'content' => [
+                                [
+                                    'type' => 'text',
+                                    'text' => 'Database Error: ' . $pe->getMessage(),
+                                ],
+                            ],
+                            'isError' => true,
+                        ];
+                    }
                 })
         );
 

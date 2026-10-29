@@ -10,6 +10,7 @@ $files = [
     __DIR__ . '/HttpTransportTest.php',
     __DIR__ . '/SseTransportTest.php',
     __DIR__ . '/ChaosRpcTest.php',
+    __DIR__ . '/AdvancedChaosTest.php',
 ];
 
 $failed = 0;
