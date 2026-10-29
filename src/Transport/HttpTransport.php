@@ -55,6 +55,10 @@ class HttpTransport implements TransportInterface
      */
     public function handleRaw(callable|object $handler, string $rawBody): string
     {
+        if ($handler instanceof \PhpMcp\Server) {
+            return (string)($handler->handleRaw($rawBody) ?? '');
+        }
+
         $callback = is_callable($handler)
             ? $handler
             : fn(JsonRpcRequest $req) => $handler->handleRequest($req);

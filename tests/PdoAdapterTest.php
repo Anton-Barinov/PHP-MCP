@@ -66,12 +66,27 @@ assert($data['rows'][0]['email'] === 'alice@example.com', 'Alice email should ma
 echo "  ✓ db_query SELECT worked\n";
 
 // 6. Test db_query ReadOnly protection
-$res = $server->handleRequest(new JsonRpcRequest(
-    method: 'tools/call',
-    params: ['name' => 'db_query', 'arguments' => ['sql' => "DROP TABLE users"]],
-    id: 4
-));
-assert($res->result['isError'] === true, 'DROP TABLE should be rejected in read-only mode');
-echo "  ✓ Read-only mode blocked DROP TABLE\n";
+$badQueries = [
+    "DROP TABLE users",
+    "SELECT 1; DROP TABLE users;",
+    "UPDATE users SET name = 'Attacker'",
+    "INSERT INTO users (name) VALUES ('Hacked')",
+    "WITH cte AS (SELECT 1) DELETE FROM users",
+];
+
+foreach ($badQueries as $badSql) {
+    $res = $server->handleRequest(new JsonRpcRequest(
+        method: 'tools/call',
+        params: ['name' => 'db_query', 'arguments' => ['sql' => $badSql]],
+        id: 4
+    ));
+    assert($res->result['isError'] === true, "Query should be rejected: {$badSql}");
+}
+echo "  ✓ Hardened read-only mode blocked all mutation vectors\n";
+
+// 7. Test db resource template
+$templates = $server->getResourceTemplates();
+assert(isset($templates['db://tables/{table}/schema']), 'PdoAdapter should register table schema template');
+echo "  ✓ db table schema template registered\n";
 
 echo "PdoAdapterTest passed successfully!\n";

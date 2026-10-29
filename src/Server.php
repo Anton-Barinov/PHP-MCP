@@ -109,6 +109,53 @@ class Server
         return $this->handle($request);
     }
 
+    /**
+     * Process a raw JSON-RPC 2.0 payload in memory and return serialized JSON (or null for notifications)
+     */
+    public function handleRaw(string $rawJson): ?string
+    {
+        $decoded = json_decode($rawJson, true);
+        if ($decoded === null && trim($rawJson) !== 'null') {
+            return JsonRpcResponse::error(null, JsonRpcResponse::PARSE_ERROR, 'Parse error: Invalid JSON payload')->toJson();
+        }
+
+        // Support JSON-RPC 2.0 Batch request
+        if (is_array($decoded) && array_is_list($decoded)) {
+            $responses = [];
+            foreach ($decoded as $item) {
+                if (!is_array($item)) {
+                    $responses[] = JsonRpcResponse::error(null, JsonRpcResponse::INVALID_REQUEST, 'Invalid Request: batch element must be an object')->toArray();
+                    continue;
+                }
+                try {
+                    $req = JsonRpcRequest::fromArray($item);
+                    $res = $this->handle($req);
+                    if ($res instanceof JsonRpcResponse && !$req->isNotification()) {
+                        $responses[] = $res->toArray();
+                    }
+                } catch (Throwable $e) {
+                    $responses[] = JsonRpcResponse::error($item['id'] ?? null, JsonRpcResponse::INVALID_REQUEST, $e->getMessage())->toArray();
+                }
+            }
+            return empty($responses) ? null : json_encode($responses, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+
+        if (!is_array($decoded)) {
+            return JsonRpcResponse::error(null, JsonRpcResponse::INVALID_REQUEST, 'Invalid Request: expected JSON object')->toJson();
+        }
+
+        try {
+            $req = JsonRpcRequest::fromArray($decoded);
+            $res = $this->handle($req);
+            if ($res instanceof JsonRpcResponse && !$req->isNotification()) {
+                return $res->toJson();
+            }
+            return null;
+        } catch (Throwable $e) {
+            return JsonRpcResponse::error($decoded['id'] ?? null, JsonRpcResponse::INVALID_REQUEST, $e->getMessage())->toJson();
+        }
+    }
+
     public function addTool(Tool $tool): self
     {
         $this->tools[$tool->getName()] = $tool;

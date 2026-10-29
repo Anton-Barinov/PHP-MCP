@@ -97,8 +97,39 @@ class PdoAdapter
 
                     if ($this->readOnly) {
                         $normalized = strtoupper(ltrim($sql));
-                        if (!str_starts_with($normalized, 'SELECT') && !str_starts_with($normalized, 'PRAGMA') && !str_starts_with($normalized, 'EXPLAIN') && !str_starts_with($normalized, 'SHOW') && !str_starts_with($normalized, 'DESCRIBE')) {
+                        // 1. Must start with a read query keyword
+                        $allowedPrefixes = ['SELECT', 'PRAGMA', 'EXPLAIN', 'SHOW', 'DESCRIBE', 'WITH'];
+                        $matchesPrefix = false;
+                        foreach ($allowedPrefixes as $prefix) {
+                            if (str_starts_with($normalized, $prefix)) {
+                                $matchesPrefix = true;
+                                break;
+                            }
+                        }
+                        if (!$matchesPrefix) {
                             throw new \RuntimeException('Permission denied: MCP database server is running in read-only mode (SELECT queries only).');
+                        }
+
+                        // 2. Reject stacked queries or hidden mutation operations (CTE, INTO OUTFILE, DROP, etc.)
+                        $prohibitedPatterns = [
+                            '/\bINSERT\b/i',
+                            '/\bUPDATE\b/i',
+                            '/\bDELETE\b/i',
+                            '/\bDROP\b/i',
+                            '/\bALTER\b/i',
+                            '/\bTRUNCATE\b/i',
+                            '/\bCREATE\b/i',
+                            '/\bRENAME\b/i',
+                            '/\bREPLACE\b/i',
+                            '/\bGRANT\b/i',
+                            '/\bREVOKE\b/i',
+                            '/INTO\s+(?:OUTFILE|DUMPFILE)/i',
+                        ];
+
+                        foreach ($prohibitedPatterns as $pattern) {
+                            if (preg_match($pattern, $sql)) {
+                                throw new \RuntimeException('Permission denied: statement contains prohibited mutation command in read-only mode.');
+                            }
                         }
                     }
 
@@ -134,6 +165,13 @@ class PdoAdapter
                     $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
                     return "Database Driver: {$driver}\nDatabase connected successfully via PHP-MCP PdoAdapter.";
                 })
+        );
+
+        // Resource Template: db://tables/{table}/schema
+        $server->addResourceTemplate(
+            \PhpMcp\ResourceTemplate::create('db://tables/{table}/schema', 'Table Schema Template')
+                ->description('Dynamic schema definition for any database table')
+                ->mimeType('application/json')
         );
 
         return $this;
