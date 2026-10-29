@@ -121,6 +121,9 @@ class Server
 
         // Support JSON-RPC 2.0 Batch request
         if (is_array($decoded) && array_is_list($decoded)) {
+            if (empty($decoded)) {
+                return JsonRpcResponse::error(null, JsonRpcResponse::INVALID_REQUEST, 'Invalid Request: batch array cannot be empty')->toJson();
+            }
             $responses = [];
             foreach ($decoded as $item) {
                 if (!is_array($item)) {

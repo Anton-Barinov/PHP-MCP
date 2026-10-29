@@ -97,7 +97,10 @@ class PdoAdapter
                     $sql = trim((string)$args['sql']);
 
                     if ($this->readOnly) {
-                        $normalized = strtoupper(ltrim($sql));
+                        $cleanSql = preg_replace('/\/\*.*?\*\//s', ' ', $sql);
+                        $cleanSql = preg_replace('/--[^\r\n]*/', ' ', $cleanSql);
+                        $normalized = strtoupper(ltrim($cleanSql));
+
                         // 1. Must start with a read query keyword
                         $allowedPrefixes = ['SELECT', 'PRAGMA', 'EXPLAIN', 'SHOW', 'DESCRIBE', 'WITH'];
                         $matchesPrefix = false;
@@ -124,13 +127,22 @@ class PdoAdapter
                             '/\bREPLACE\b/i',
                             '/\bGRANT\b/i',
                             '/\bREVOKE\b/i',
+                            '/\bATTACH\b/i',
+                            '/\bDETACH\b/i',
                             '/INTO\s+(?:OUTFILE|DUMPFILE)/i',
+                            '/PRAGMA\s+(?:WRITABLE_SCHEMA|AUTO_VACUUM|JOURNAL_MODE|LOCKING_MODE|KEY|HEXKEY)\b/i',
+                            '/PRAGMA\s+[a-zA-Z0-9_]+\s*=/i',
                         ];
 
                         foreach ($prohibitedPatterns as $pattern) {
-                            if (preg_match($pattern, $sql)) {
+                            if (preg_match($pattern, $cleanSql)) {
                                 throw new \RuntimeException('Permission denied: statement contains prohibited mutation command in read-only mode.');
                             }
+                        }
+
+                        // Prevent stacked multi-statement queries
+                        if (preg_match('/;\s*\S/', $cleanSql)) {
+                            throw new \RuntimeException('Permission denied: stacked multi-statement queries are prohibited in read-only mode.');
                         }
                     }
 

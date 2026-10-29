@@ -31,6 +31,10 @@ class JsonRpcRequest
             throw new InvalidArgumentException('Missing or invalid "method" property');
         }
 
+        if (isset($data['jsonrpc']) && $data['jsonrpc'] !== '2.0') {
+            throw new InvalidArgumentException('Invalid JSON-RPC protocol version: expected "2.0"');
+        }
+
         $id = $data['id'] ?? null;
         $params = isset($data['params']) && is_array($data['params']) ? $data['params'] : [];
         $jsonrpc = (string)($data['jsonrpc'] ?? '2.0');

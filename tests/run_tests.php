@@ -9,6 +9,7 @@ $files = [
     __DIR__ . '/PdoAdapterTest.php',
     __DIR__ . '/HttpTransportTest.php',
     __DIR__ . '/SseTransportTest.php',
+    __DIR__ . '/ChaosRpcTest.php',
 ];
 
 $failed = 0;
