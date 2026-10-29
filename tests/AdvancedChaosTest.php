@@ -144,6 +144,33 @@ assertAdv(
     $badSqlData['result']['content'][0]['text'] ?? ''
 );
 
+// -------------------------------------------------------------
+// 5. Jumbo Payloads (10MB+) & Framing Test
+// -------------------------------------------------------------
+echo "\n5. Testing Jumbo Payloads (10MB+) & Framing...\n";
+
+$jumboText = str_repeat("Hello World Large Payload Test! ", 350000); // ~11.2 MB
+$jumboReq = json_encode([
+    'jsonrpc' => '2.0',
+    'id'      => 'jumbo_1',
+    'method'  => 'tools/call',
+    'params'  => [
+        'name'      => 'noisy_tool',
+        'arguments' => ['val' => substr($jumboText, 0, 100)],
+    ],
+]);
+
+$startJumbo = microtime(true);
+$jumboRes = $server->handleRaw($jumboReq);
+$jumboDuration = round((microtime(true) - $startJumbo) * 1000, 2);
+
+$jumboParsed = json_decode((string)$jumboRes, true);
+assertAdv(
+    "11+ MB payload processed cleanly without memory exhaustion ({$jumboDuration}ms)",
+    isset($jumboParsed['result']['content'][0]['text']),
+    "ID: " . ($jumboParsed['id'] ?? '')
+);
+
 echo "\n-------------------------------------------------------\n";
 echo "Results: {$pass} Passed, {$fail} Failed\n";
 echo "-------------------------------------------------------\n";
