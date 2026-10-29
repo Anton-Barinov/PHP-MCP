@@ -6,15 +6,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../src/Server.php';
-require_once __DIR__ . '/../src/Tool.php';
-require_once __DIR__ . '/../src/Resource.php';
-require_once __DIR__ . '/../src/Prompt.php';
-require_once __DIR__ . '/../src/Protocol/ProtocolVersion.php';
-require_once __DIR__ . '/../src/Protocol/JsonRpcRequest.php';
-require_once __DIR__ . '/../src/Protocol/JsonRpcResponse.php';
-require_once __DIR__ . '/../src/Transport/TransportInterface.php';
-require_once __DIR__ . '/../src/Transport/SseTransport.php';
+require_once __DIR__ . '/../src/autoload.php';
 
 use PhpMcp\Server;
 use PhpMcp\Tool;

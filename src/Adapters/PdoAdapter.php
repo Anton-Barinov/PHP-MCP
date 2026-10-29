@@ -8,6 +8,7 @@ use PDO;
 use PhpMcp\Server;
 use PhpMcp\Tool;
 use PhpMcp\Resource;
+use PhpMcp\ResourceTemplate;
 
 class PdoAdapter
 {

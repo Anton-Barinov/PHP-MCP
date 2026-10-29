@@ -44,6 +44,9 @@
   "bin": [
     "bin/php-mcp"
   ],
+  "scripts": {
+    "test": "php tests/run_tests.php"
+  },
   "extra": {
     "laravel": {
       "providers": [
